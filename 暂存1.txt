@@ -1,0 +1,124 @@
+%% LFM信号相关参数
+T = 10e-6;                % LFM信号脉冲持续时间 10us
+B = 10e6;                 % 带宽10MHz
+K = B / T;                % 调频斜率
+fc = 40e6;                % 采样频率
+Ts = 1 / fc;              % 采样间隔
+N = round(T / Ts);        % 采样点数
+A = 1;                    % 振幅
+
+%% LFM信号生成
+t = linspace(0, T, N);                  % LFM信号的时域采样点
+St = A * exp(1i * pi * K * t.^2);       % 生成LFM信号
+
+%% 绘制LFM信号
+figure(1)
+subplot(2, 1, 1)
+plot(t*1e6, real(St), 'k', 'LineWidth', 1.5);
+xlabel('时间t/us');
+title('LFM信号时域');
+grid on; axis tight;
+
+subplot(2, 1, 2)
+freq1 = linspace(-fc/2, fc/2, N);
+plot(freq1*1e-6, fftshift(abs(fft(St))), 'k', 'LineWidth', 1.5);
+xlabel('频率f/MHz');
+title('LFM信号频谱');
+grid on; axis tight;
+
+%% 回波信号相关参数
+R = 1e3;                      % 目标与雷达之间的距离
+c = 3e8;                       % 光速
+f_c = fc + B/2;                % 回波信号中心频率
+td = 2 * R/c;                  % 根据距离R计算时延
+L_p = (4 * pi * R * f_c)/c;    % 自由空间传播损耗
+A_r = 1/L_p;                   % 幅值衰减系数
+
+%% 计算回波信号
+t2 = t - td;                   % 加上时延
+Sr = A_r * St;                 % 回波信号
+
+%% 绘制回波信号时域和频域波形
+figure(2)
+subplot(2, 1, 1)
+plot((t+td)*1e6, real(Sr), 'k', 'LineWidth', 1.5);
+xlabel('时间t/us');
+title('回波信号时域');
+grid on; axis tight;
+
+subplot(2, 1, 2)
+freq2 = linspace(-f_c/2, f_c/2, N);
+plot(freq2*1e-6, fftshift(abs(fft(Sr))), 'k', 'LineWidth', 1.5);
+xlabel('频率f/MHz');
+title('回波信号频谱');
+grid on; axis tight;
+
+%% SMSP信号相关参数
+M = 5;                                         % 压缩倍数
+T_smsp0 = T / M;                               % 子脉冲持续时间
+K_smsp = K * M;                                % SMSP信号的调频斜率
+N_smsp0 = round(fc * T_smsp0);                 % 计算单个子脉冲内的采样点个数
+N_smsp = round(fc * T);                        % SMSP信号采样点个数
+t_smsp0 = t / M;                               % 生成一段时间序列 t_SMSP0，用于产生每个子脉冲的调频信号
+t_smsp = linspace(0, T, N);              % SMSP信号的时域采样点
+
+%% 生成SMSP信号
+smsp = zeros(1, N);                                           % 初始化SMSP信号
+for i = 1:M
+t0 = (i-1) * T_smsp0;                                         % 每个子脉冲的起始时刻
+t1 = t0 + T_smsp0;                                            % 每个子脉冲的终止时刻
+t_smsp_i = t_smsp((i-1)*N_smsp0+1:i*N_smsp0);                 % 第i个子脉冲的时域采样点
+smsp_i = A_r * exp(1j*pi*K_smsp*(t_smsp_i-t0).^2);                  % 生成第i个子脉冲的调频信号
+smsp((i-1)*N_smsp0+1:i*N_smsp0) = smsp_i;                     % 将第i个子脉冲的调频信号插入到SMSP信号中
+end
+
+%% 绘制SMSP信号
+figure(3)
+subplot(2, 1, 1)
+plot((t_smsp+td)*1e6, real(smsp), 'k', 'LineWidth', 1.5);
+xlabel('时间t/us');
+title('SMSP干扰信号时域');
+grid on; axis tight;
+
+%% 绘制SMSP信号频谱
+subplot(2, 1, 2)
+freq_smsp = linspace(-fc/2, fc/2, N_smsp);
+plot(freq_smsp*1e-6, fftshift(abs(fft(smsp))), 'k', 'LineWidth', 1.5);
+xlabel('频率f/MHz');
+title('SMSP干扰信号频谱');
+grid on; axis tight;
+
+%% 混合回波信号
+S = Sr + smsp;
+
+%% 绘制混合回波信号
+figure(4)
+subplot(2, 1, 1)
+plot((t_smsp+td)*1e6, real(S), 'k', 'LineWidth', 1.5);
+xlabel('时间t/us');
+title('SMSP干扰信号时域');
+grid on; axis tight;
+
+%% 绘制混合回波信号频谱
+subplot(2, 1, 2)
+freq_smsp = linspace(-fc/2, fc/2, N_smsp);
+S_fft = fftshift(abs(fft(S)));
+plot(freq_smsp*1e-6, S_fft, 'k', 'LineWidth', 1.5);
+xlabel('频率f/MHz');
+title('SMSP干扰信号频谱');
+grid on; axis tight;
+
+%% 估计干扰子波形数目
+Me = 0;
+tlabel = [];
+[f, f_index] = max(S_fft);
+f_hz = freq_smsp(f_index);
+for w = 1:length(f_index)-1
+if(abs(f_index(w+1)+f_index(w)) > (B*le-6))
+Me = Me+1;
+tlabel = [tlabel,w];
+end
+end
+tlabel1 = [0, tlabel, length(f_index)];
+Me = Me+1;
+ke = Me*B/T;
